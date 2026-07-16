@@ -213,8 +213,9 @@ async def enrich_stories(limit=200):
             f"Here are news story clusters, each with source headlines:\n{json.dumps(payload)}\n\n"
             f"For EACH story return: id (unchanged), headline (rewritten: factual, specific, neutral, include concrete numbers if present, max 110 chars), "
             f"summary (2-3 neutral sentences, STRICTLY under 60 words, a teaser not a replacement), "
-            f"category (exactly one of: {', '.join(CATEGORIES)}), tags (up to 3 short secondary tags). "
-            f"Respond with ONLY a JSON array of objects with keys id, headline, summary, category, tags.")
+            f"category (exactly one of: {', '.join(CATEGORIES)}), tags (up to 3 short secondary tags — broad topical labels like 'AI Products', 'AI Agents', 'Funding'), "
+            f"keywords (up to 6 short specific noun phrases pulled from the story — company/product/person names, capitalized proper nouns, no filler). "
+            f"Respond with ONLY a JSON array of objects with keys id, headline, summary, category, tags, keywords.")
         try:
             results = extract_json(await llm_call(EDITOR_SYS, prompt))
         except Exception as e:
@@ -228,8 +229,57 @@ async def enrich_stories(limit=200):
             headline = (r.get('headline') or story['headline'])[:160]
             await db.stories.update_one({"id": story['id']}, {"$set": {
                 "headline": headline, "summary": r.get('summary', '')[:400], "category": cat,
-                "tags": (r.get('tags') or [])[:3], "enriched": True, "slug": slugify(headline, story['id'])}})
+                "tags": (r.get('tags') or [])[:3], "keywords": (r.get('keywords') or [])[:6],
+                "enriched": True, "slug": slugify(headline, story['id'])}})
         logger.info("Enriched %d stories", len(results))
+
+
+async def link_continues_from(limit=40):
+    """For recently enriched stories without a `continues_from`, check if they update an older story."""
+    now = now_utc()
+    cutoff_new = iso(now - timedelta(hours=24))
+    cutoff_old = iso(now - timedelta(days=10))
+    fresh = await db.stories.find(
+        {"enriched": True, "first_seen": {"$gte": cutoff_new}, "continues_from_checked": {"$ne": True}},
+        {"_id": 0}
+    ).sort("first_seen", -1).to_list(limit)
+    if not fresh:
+        return
+    for s in fresh:
+        # Candidate older stories in same category, older than this by >= 12 hours
+        cand = await db.stories.find({
+            "enriched": True,
+            "category": s.get("category"),
+            "id": {"$ne": s["id"]},
+            "first_seen": {"$gte": cutoff_old, "$lt": iso(parse_iso(s["first_seen"]) - timedelta(hours=12))},
+        }, {"_id": 0, "id": 1, "headline": 1, "slug": 1, "first_seen": 1, "sources": 1}).sort("first_seen", -1).to_list(30)
+        if not cand:
+            await db.stories.update_one({"id": s["id"]}, {"$set": {"continues_from_checked": True}})
+            continue
+        cand_payload = [{"id": c["id"], "headline": c["headline"]} for c in cand[:15]]
+        prompt = (f'Current story: "{s["headline"]}"\n\n'
+                  f'Candidate older stories (from 12h to 10 days ago):\n{json.dumps(cand_payload)}\n\n'
+                  f'Is the current story a direct continuation / update of exactly ONE of the candidates? '
+                  f'A continuation means the same event with new developments — not just the same topic. '
+                  f'Respond with ONLY JSON: {{"continues": "<id-or-null>"}}.')
+        try:
+            resp = await llm_call("You are a careful news editor identifying story continuations. Be conservative — return null unless clearly the same event.", prompt)
+            m = re.search(r'\{[^{}]*\}', resp, re.DOTALL)
+            data = json.loads(m.group(0)) if m else {}
+            cid = data.get("continues")
+        except Exception as e:
+            logger.warning("continues_from llm failed for %s: %s", s["id"], e)
+            cid = None
+        update = {"$set": {"continues_from_checked": True}}
+        if cid:
+            parent = next((c for c in cand if c["id"] == cid), None)
+            if parent:
+                update["$set"]["continues_from"] = {
+                    "id": parent["id"], "slug": parent["slug"], "headline": parent["headline"],
+                    "first_seen": parent["first_seen"], "source_count": len(parent.get("sources", [])),
+                    "category": s.get("category"),
+                }
+        await db.stories.update_one({"id": s["id"]}, update)
 
 
 async def generate_tldr(force=False):
@@ -291,4 +341,5 @@ async def run_ingestion():
         await db.meta.update_one({"key": "last_ingest"}, {"$set": {"key": "last_ingest", "time": iso(now), "new_items": new_items}}, upsert=True)
         logger.info("Ingestion done: %d new items", new_items)
         await enrich_stories()
+        await link_continues_from()
         await generate_tldr()

@@ -1,0 +1,23 @@
+{
+  "summary": "Full backend + frontend testing pass for OG/SSR/inline-expandable feature set. All 19 pytest tests in /app/backend/tests/test_og_and_ssr.py pass (OG PNG 1200x630 <300KB with X-Cache HIT on 2nd fetch, SSR crawler bridge with curl UA returns HTML w/ h1/JSON-LD/isBasedOn, SPA served for Chrome UA, sitemap/robots ok, /api/story returns role + keywords, ADMIN_PASSWORD sourced only from env). Also verified extra endpoints: /api/rss.xml=200 application/rss+xml, /api/admin/verify with correct pw=200 and wrong pw=401. Frontend flows all working: home story-feed loads with 131 rows and 9 filter chips, TldrHero Share digest button shows sonner toast 'Digest link copied' (verified), clicking story-row-toggle expands inline with story-expanded-<id>, key-sources block, source-role-0='SOURCE', source-link-0 external href, share-copy/bookmark buttons present, collapse works, only-one-expanded-at-a-time works, Products filter chip updates URL to ?tag=Products+%26+Tools and narrows to 38 rows, '/' focuses search-input, j+j+Enter expands 2nd row via keyboard. Story permalink page /story/<cat>/<slug> loads: story-headline testid present, absolute og:image points at /api/og/story/<id>.png, og:title/og:description/twitter:card=summary_large_image/canonical present, JSON-LD NewsArticle with isBasedOn+citation arrays, TOPICS and TAGS blocks visible, source role labels rendered visually. No critical issues found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_og_and_ssr.py", "/app/test_reports/pytest/og_ssr_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor consistency: /app/frontend/src/pages/Story.jsx uses data-testid='source-list' and no per-source 'source-role-<i>' testids, while StoryRow (inline expanded) uses 'key-sources' and 'source-role-<i>'. Role labels ARE rendered visually on the permalink page so the acceptance is met, but adopting the same testids would make selectors uniform for future tests.",
+    "Story permalink KEYWORDS block only renders when story.keywords is non-empty; some existing (pre-enrichment) stories have empty keywords which is expected."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin: pulse-admin-9F3k (from /app/memory/test_credentials.md, header X-Admin-Password or body.password to POST /api/admin/verify)",
+  "seed_data_creation": "None — used existing 131 stories in DB",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 19 pytest tests in /app/backend/tests/test_og_and_ssr.py cover OG cards, SSR bridge, sitemap/robots, keywords/role fields, and ADMIN_PASSWORD env sourcing — these plus RSS + admin verify are the regression bar. Frontend inline-expand behavior in StoryRow uses testids story-row-toggle-<id>, story-expanded-<id>, key-sources, source-role-<i>, source-link-<i>, share-copy-<id>, bookmark-btn-<id>. Story permalink page uses different testids (source-list, story-bookmark-btn, share-copy-btn) — same visual role labels though.",
+  "rca of the issue": "No bugs found."
+}

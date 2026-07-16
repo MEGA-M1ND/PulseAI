@@ -2,17 +2,17 @@ import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import { Search } from "lucide-react";
-import api, { categorySlug } from "@/lib/api";
+import api, { CATEGORY_SHORT } from "@/lib/api";
 import TldrHero from "@/components/TldrHero";
 import FilterBar from "@/components/FilterBar";
-import StoryCard from "@/components/StoryCard";
+import StoryRow from "@/components/StoryRow";
 import Newsletter from "@/components/Newsletter";
 
 const dayLabel = (d) => {
   const date = dayjs(d);
-  if (date.isSame(dayjs(), "day")) return "Today";
-  if (date.isSame(dayjs().subtract(1, "day"), "day")) return "Yesterday";
-  return date.format("dddd, MMM D");
+  if (date.isSame(dayjs(), "day")) return "Today, " + date.format("MMM D, YYYY");
+  if (date.isSame(dayjs().subtract(1, "day"), "day")) return "Yesterday, " + date.format("MMM D, YYYY");
+  return date.format("dddd, MMM D, YYYY");
 };
 
 export default function Home() {
@@ -23,6 +23,7 @@ export default function Home() {
   const [tldrLoading, setTldrLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [selIdx, setSelIdx] = useState(-1);
+  const [expandedId, setExpandedId] = useState(null);
   const searchRef = useRef(null);
   const navigate = useNavigate();
 
@@ -57,6 +58,8 @@ export default function Home() {
 
   const flat = useMemo(() => groups.flatMap(([, list]) => list), [groups]);
 
+  const toggle = (id) => setExpandedId((cur) => (cur === id ? null : id));
+
   useEffect(() => {
     const onKey = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
@@ -67,8 +70,11 @@ export default function Home() {
       else if (e.key === "j") setSelIdx((i) => Math.min(i + 1, flat.length - 1));
       else if (e.key === "k") setSelIdx((i) => Math.max(i - 1, 0));
       else if (e.key === "Enter" && selIdx >= 0 && flat[selIdx]) {
+        toggle(flat[selIdx].id);
+      } else if (e.key === "o" && selIdx >= 0 && flat[selIdx]) {
         const s = flat[selIdx];
-        navigate(`/story/${categorySlug(s.category)}/${s.slug}`);
+        const cat = (s.category || "news").toLowerCase().replace(/\s*&\s*/g, "-and-").replace(/\s+/g, "-");
+        navigate(`/story/${cat}/${s.slug}`);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -81,13 +87,14 @@ export default function Home() {
 
   const setTag = (t) => {
     setSelIdx(-1);
+    setExpandedId(null);
     setParams(t === "All" ? {} : { tag: t }, { replace: false });
   };
 
   let flatCounter = -1;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10">
       <TldrHero tldr={tldr} loading={tldrLoading} />
 
       <div className="mt-8">
@@ -102,11 +109,11 @@ export default function Home() {
         <kbd className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">/</kbd>
       </div>
 
-      <div className="mt-8 space-y-10" data-testid="story-feed">
+      <div className="mt-10 space-y-12" data-testid="story-feed">
         {filtered === null && (
           <div className="space-y-3">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-24 rounded-lg border border-border/60 bg-card animate-pulse" />
+              <div key={i} className="h-16 rounded border-l-2 border-border/60 bg-card/40 animate-pulse" />
             ))}
           </div>
         )}
@@ -120,28 +127,50 @@ export default function Home() {
           </div>
         )}
 
-        {groups.map(([date, list], gi) => (
-          <Fragment key={date}>
-            <section>
-              <div className="flex items-baseline gap-3 mb-4 border-b border-border/60 pb-2">
-                <h2 className="font-serif text-lg font-semibold" data-testid={`day-header-${date}`}>{dayLabel(date)}</h2>
-                <span className="text-xs text-muted-foreground">{list.length} stories</span>
-              </div>
-              <div className="space-y-3">
-                {list.map((s, i) => {
-                  flatCounter += 1;
-                  const idx = flatCounter;
-                  return (
-                    <div key={s.id} data-flatidx={idx}>
-                      <StoryCard story={s} rank={i + 1} selected={idx === selIdx} />
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-            {gi === 0 && groups.length > 1 && <Newsletter />}
-          </Fragment>
-        ))}
+        {groups.map(([date, list], gi) => {
+          const cats = list.reduce((m, s) => {
+            const k = CATEGORY_SHORT[s.category] || s.category || "News";
+            m.set(k, (m.get(k) || 0) + 1);
+            return m;
+          }, new Map());
+          return (
+            <Fragment key={date}>
+              <section>
+                <div className="flex items-baseline gap-4 mb-4 border-b border-border/60 pb-3 flex-wrap">
+                  <h2 className="font-serif text-lg sm:text-xl font-bold" data-testid={`day-header-${date}`}>
+                    {dayLabel(date)}
+                  </h2>
+                  <span className="text-xs text-muted-foreground">
+                    {list.length} {list.length === 1 ? "story" : "stories"}
+                  </span>
+                  {[...cats.entries()].slice(0, 6).map(([c, n]) => (
+                    <span key={c} className="text-xs text-muted-foreground/80">
+                      {c} <span className="text-muted-foreground/50 tabular-nums">{n}</span>
+                    </span>
+                  ))}
+                </div>
+                <div>
+                  {list.map((s, i) => {
+                    flatCounter += 1;
+                    const idx = flatCounter;
+                    return (
+                      <div key={s.id} data-flatidx={idx}>
+                        <StoryRow
+                          story={s}
+                          rank={i + 1}
+                          expanded={expandedId === s.id}
+                          onToggle={() => toggle(s.id)}
+                          selected={idx === selIdx}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+              {gi === 0 && groups.length > 1 && <Newsletter />}
+            </Fragment>
+          );
+        })}
       </div>
     </div>
   );

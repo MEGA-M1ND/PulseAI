@@ -20,8 +20,10 @@ import httpx
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from pipeline import (db, run_ingestion, generate_tldr, enrich_stories, ensure_sources,
+from pipeline import (db, run_ingestion, generate_tldr, enrich_stories, link_continues_from, ensure_sources,
                       compute_score, now_utc, iso, parse_iso, CATEGORIES)
+import og as og_mod
+import ssr as ssr_mod
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -67,12 +69,43 @@ def story_public(s, now=None):
     return {
         "id": s['id'], "slug": s['slug'], "headline": s['headline'], "summary": s.get('summary', ''),
         "category": s.get('category', ''), "tags": s.get('tags', []),
+        "keywords": s.get('keywords', []),
         "source_count": len(s.get('sources', [])),
         "source_names": list(dict.fromkeys(src['source'] for src in s.get('sources', [])))[:4],
         "first_seen": s['first_seen'], "last_updated": s['last_updated'],
         "is_new": (now - first) < timedelta(hours=6), "is_updated": bool(s.get('updated')),
         "score": compute_score(s, now), "enriched": s.get('enriched', False),
+        "continues_from": s.get('continues_from'),
     }
+
+
+def assign_source_roles(sources):
+    """Sort sources by published_at then assign SOURCE / ENGAGEMENT / SUPPORT / ANALYSIS heuristically."""
+    if not sources:
+        return []
+    ordered = sorted(sources, key=lambda x: x.get('published_at', ''))
+    first_time = parse_iso(ordered[0]['published_at'])
+    first_source = ordered[0]['source']
+    seen_sources = set()
+    out = []
+    for i, s in enumerate(ordered):
+        try:
+            t = parse_iso(s['published_at'])
+        except Exception:
+            t = first_time
+        delta = (t - first_time).total_seconds() / 3600  # hours
+        if i == 0:
+            role = "SOURCE"
+        elif s['source'] == first_source and delta < 0.5:
+            role = "ENGAGEMENT"
+        elif s['source'] not in seen_sources and delta <= 6:
+            role = "SUPPORT"
+        else:
+            role = "ANALYSIS"
+        seen_sources.add(s['source'])
+        out.append({**s, "role": role})
+    # Return in chronological order (oldest first) — frontend can decide display order
+    return out
 
 
 @api.get("/feed")
@@ -115,7 +148,7 @@ async def get_story(slug: str):
     related = await db.stories.find({"category": s.get('category'), "id": {"$ne": s['id']},
                                      "first_seen": {"$gte": cutoff}}, {"_id": 0, "tokens": 0}).to_list(50)
     related.sort(key=lambda r: compute_score(r, now), reverse=True)
-    sources = sorted(s.get('sources', []), key=lambda x: x['published_at'], reverse=True)
+    sources = assign_source_roles(s.get('sources', []))
     return {**story_public(s, now), "sources": sources, "timeline": s.get('timeline', []),
             "headline_history": s.get('headline_history', []),
             "related": [story_public(r, now) for r in related[:5]]}
@@ -292,6 +325,110 @@ async def admin_stats(x_admin_password: str = Header(None, alias="X-Admin-Passwo
 @api.get("/")
 async def root():
     return {"message": "PulseAI API", "status": "ok"}
+
+
+# ---------- OG image endpoints ----------
+_OG_HEADERS = {"Cache-Control": "public, max-age=86400, s-maxage=604800"}
+
+
+@api.get("/og/default.png")
+async def og_default():
+    data, cached_ = og_mod.cached_or_generate("default-v2.png", og_mod.render_default_card)
+    return Response(content=data, media_type="image/png", headers={**_OG_HEADERS, "X-Cache": "HIT" if cached_ else "MISS"})
+
+
+@api.get("/og/story/{story_id}.png")
+async def og_story(story_id: str):
+    s = await db.stories.find_one({"id": story_id}, {"_id": 0}) or \
+        await db.stories.find_one({"slug": story_id}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Story not found")
+    now = now_utc()
+    payload = {**story_public(s, now)}
+    name = og_mod.cache_key_story(payload)
+    data, cached_ = og_mod.cached_or_generate(name, lambda: og_mod.render_story_card(payload))
+    return Response(content=data, media_type="image/png", headers={**_OG_HEADERS, "X-Cache": "HIT" if cached_ else "MISS"})
+
+
+@api.get("/og/digest/{date}.png")
+async def og_digest(date: str):
+    doc = await db.digests.find_one({"date": date, "key": {"$ne": "latest"}}, {"_id": 0})
+    if not doc:
+        doc = await db.digests.find_one({"date": date}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Digest not found")
+    import hashlib
+    bh = hashlib.md5("|".join(doc.get("bullets", [])).encode()).hexdigest()
+    name = og_mod.cache_key_digest(date, bh)
+    data, cached_ = og_mod.cached_or_generate(name, lambda: og_mod.render_digest_card(date, doc.get("bullets", [])))
+    return Response(content=data, media_type="image/png", headers={**_OG_HEADERS, "X-Cache": "HIT" if cached_ else "MISS"})
+
+
+# ---------- SSR endpoints ----------
+_SSR_CACHE_HOME = 60           # 1 min
+_SSR_CACHE_STORY = 600         # 10 min
+_SSR_CACHE_DIGEST = 86400      # 1 day (past digests)
+
+
+@api.get("/ssr/", response_class=Response)
+async def ssr_home():
+    if (data := cached("ssr:home", ttl=_SSR_CACHE_HOME)) is not None:
+        return Response(content=data, media_type="text/html",
+                        headers={"Cache-Control": "public, max-age=60"})
+    now = now_utc()
+    cutoff = iso(now - timedelta(days=7))
+    stories = await db.stories.find({"first_seen": {"$gte": cutoff}, "enriched": True}, {"_id": 0, "tokens": 0}).to_list(300)
+    stories.sort(key=lambda s: (s['first_seen'][:10], compute_score(s, now)), reverse=True)
+    feed = [story_public(s, now) for s in stories]
+    tldr = await db.digests.find_one({"key": "latest"}, {"_id": 0}) or {}
+    html_out = ssr_mod.render_home_html(tldr, feed)
+    set_cache("ssr:home", html_out)
+    return Response(content=html_out, media_type="text/html", headers={"Cache-Control": "public, max-age=60"})
+
+
+@api.get("/ssr/story/{slug}", response_class=Response)
+async def ssr_story(slug: str):
+    key = f"ssr:story:{slug}"
+    if (data := cached(key, ttl=_SSR_CACHE_STORY)) is not None:
+        return Response(content=data, media_type="text/html",
+                        headers={"Cache-Control": "public, max-age=600"})
+    s = await db.stories.find_one({"slug": slug}, {"_id": 0, "tokens": 0}) or \
+        await db.stories.find_one({"id": slug}, {"_id": 0, "tokens": 0})
+    if not s:
+        raise HTTPException(404, "Story not found")
+    now = now_utc()
+    cutoff = iso(now - timedelta(hours=72))
+    related_docs = await db.stories.find({"category": s.get('category'), "id": {"$ne": s['id']},
+                                          "first_seen": {"$gte": cutoff}}, {"_id": 0, "tokens": 0}).to_list(50)
+    related_docs.sort(key=lambda r: compute_score(r, now), reverse=True)
+    related = [story_public(r, now) for r in related_docs[:5]]
+    sources = assign_source_roles(s.get('sources', []))
+    story = {**story_public(s, now)}
+    html_out = ssr_mod.render_story_html(story, sources, related)
+    set_cache(key, html_out)
+    return Response(content=html_out, media_type="text/html", headers={"Cache-Control": "public, max-age=600"})
+
+
+@api.get("/ssr/digest/{date}", response_class=Response)
+async def ssr_digest(date: str):
+    key = f"ssr:digest:{date}"
+    if (data := cached(key, ttl=_SSR_CACHE_DIGEST)) is not None:
+        return Response(content=data, media_type="text/html",
+                        headers={"Cache-Control": "public, max-age=86400"})
+    doc = await db.digests.find_one({"date": date, "key": {"$ne": "latest"}}, {"_id": 0})
+    if not doc:
+        doc = await db.digests.find_one({"date": date}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Digest not found")
+    html_out = ssr_mod.render_digest_html(doc)
+    set_cache(key, html_out)
+    return Response(content=html_out, media_type="text/html", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api.get("/robots.txt", response_class=Response)
+async def robots_txt():
+    txt = f"User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/admin\nDisallow: /api/\n\nSitemap: {SITE_URL}/api/sitemap.xml\n"
+    return Response(content=txt, media_type="text/plain")
 
 
 app.include_router(api)

@@ -1,14 +1,18 @@
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { Zap, Share2 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 dayjs.extend(relativeTime);
 
 export const TldrHero = ({ tldr, loading }) => {
+  const digestDate = tldr?.generated_at ? dayjs(tldr.generated_at).format("YYYY-MM-DD") : null;
+  const digestUrl = digestDate ? `${window.location.origin}/digest/${digestDate}` : window.location.origin;
+
   const share = () => {
-    navigator.clipboard.writeText(window.location.origin);
-    toast.success("Link copied");
+    navigator.clipboard.writeText(digestUrl);
+    toast.success("Digest link copied");
   };
 
   if (loading) {
@@ -41,8 +45,8 @@ export const TldrHero = ({ tldr, loading }) => {
             <Zap size={13} /> Today in AI
           </div>
           <button onClick={share} data-testid="tldr-share-btn" aria-label="Share digest"
-            className="p-1.5 rounded-full text-muted-foreground hover:text-primary transition-colors duration-150">
-            <Share2 size={14} />
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-primary/30 text-xs text-primary hover:bg-primary/10 transition-colors duration-150">
+            <Share2 size={12} /> Share digest
           </button>
         </div>
         <h1 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight mb-5">The last 24 hours, in 5 bullets</h1>
