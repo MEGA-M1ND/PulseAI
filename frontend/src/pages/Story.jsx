@@ -224,14 +224,14 @@ export default function Story() {
         <h2 className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-4">
           Key sources — {story.source_count} total
         </h2>
-        <div className="divide-y divide-border/40" data-testid="source-list">
+        <div className="divide-y divide-border/40" data-testid="key-sources">
           {story.sources.map((src, i) => (
             <div key={i} className="grid grid-cols-[100px_1fr] sm:grid-cols-[110px_160px_1fr] gap-2 sm:gap-3 py-2.5 items-start text-[13px]">
-              <span className={`text-[10px] font-bold tracking-[0.14em] uppercase ${ROLE_COLOR[src.role || "SOURCE"] || "text-primary"}`}>
+              <span data-testid={`source-role-${i}`} className={`text-[10px] font-bold tracking-[0.14em] uppercase ${ROLE_COLOR[src.role || "SOURCE"] || "text-primary"}`}>
                 {src.role || "SOURCE"}
               </span>
               <div className="hidden sm:flex items-center gap-2 text-foreground/90 min-w-0">
-                <span className="truncate font-medium">{src.source}</span>
+                <span data-testid={`source-name-${i}`} className="truncate font-medium">{src.source}</span>
                 <span className="text-[11px] text-muted-foreground shrink-0">{timeShort(src.published_at)}</span>
               </div>
               <div className="flex items-start gap-2 min-w-0">
