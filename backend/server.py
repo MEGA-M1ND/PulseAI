@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
 NEWSLETTER_WEBHOOK_URL = os.environ.get('NEWSLETTER_WEBHOOK_URL', '')
-SITE_URL = "https://pulse-feed-24.preview.emergentagent.com"
+SITE_URL = os.environ.get('SITE_URL', 'https://pulse-feed-24.preview.emergentagent.com')
 
 scheduler = AsyncIOScheduler()
 
