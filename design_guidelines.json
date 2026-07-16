@@ -1,0 +1,106 @@
+{
+  "theme": "dark_by_default_with_light_toggle",
+  "typography": {
+    "font_installations": "Add to public/index.html: <link href=\"https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Inter:wght@300..700&display=swap\" rel=\"stylesheet\">",
+    "headings": {
+      "family": "'Playfair Display', serif",
+      "usage": "H1, H2, H3. Never use Inter or generic sans for headings. This establishes the 'Modern Newspaper' editorial feel.",
+      "style": "tracking-tight, leading-none. Use font-weight 600 or 700.",
+      "scale": {
+        "h1": "text-4xl sm:text-5xl lg:text-6xl",
+        "h2": "text-2xl sm:text-3xl lg:text-4xl",
+        "h3": "text-xl sm:text-2xl"
+      }
+    },
+    "body": {
+      "family": "'Inter', sans-serif",
+      "usage": "Paragraphs, metadata, UI chips, buttons. This provides the 'Linear Polish' contrast.",
+      "style": "leading-relaxed",
+      "scale": {
+        "base": "text-base md:text-sm",
+        "small": "text-sm",
+        "tiny": "text-xs tracking-[0.2em] uppercase"
+      }
+    }
+  },
+  "colors": {
+    "strategy": "High-Contrast Swiss Editorial. Monochromatic base with a single restrained accent.",
+    "dark": {
+      "background": "#0A0A0A",
+      "foreground": "#FAFAFA",
+      "card": "#111111",
+      "border": "#2A2A2A",
+      "muted": "#888888"
+    },
+    "light": {
+      "background": "#FAFAFA",
+      "foreground": "#0A0A0A",
+      "card": "#FFFFFF",
+      "border": "#E5E5E5",
+      "muted": "#666666"
+    },
+    "accent": {
+      "primary": "#2563EB",
+      "rules": "Restrained accent color for category chips, NEW badges, and active links ONLY. NO rainbow gradients."
+    }
+  },
+  "visual_enhancers": {
+    "borders": "Expose the skeleton. Use 1px borders (border-border/60) on cards to create an 'archival index' technical look.",
+    "shadows": "Omit large shadows. Rely on sharp borders for container definition. Use shadow-sm on hover.",
+    "glassmorphism": "Use backdrop-blur-xl bg-background/80 for sticky headers and sticky filter chips. Ensure a 1px border separates it from content.",
+    "textures": "Include a subtle noise/grain background layer to kill digital flatness and enhance the editorial feel."
+  },
+  "grids_and_layouts": {
+    "spacing": "Generous. Use p-6, p-8, and gap-8 to give text room to breathe.",
+    "mobile": "Thumb-friendly cards. Ensure main container has overflow-x-hidden to prevent horizontal scrolling.",
+    "story_feed": "Dense high-contrast grid. 12-column layout. TL;DR spans full width, regular stories span 1 column on mobile, 1/2 or 1/3 on desktop."
+  },
+  "components_instructions": {
+    "tldr_hero_card": "The flagship component. Must look like a premium digital newspaper snippet. Use a dark/tinted abstract background image with a gradient overlay (bg-black/40). Include 'Today in AI', a 5-bullet summary, timestamp, and a prominent 'Share' button.",
+    "category_chips": "Sticky horizontal scrollable row (hide scrollbar). Pill shaped `rounded-full`, 1px border. Active state uses the accent color.",
+    "story_card": "Minimalist card. Playfair Display for headline. Display rank number prominently (e.g., large light gray number). Include relative time, source count, and a NEW/UPDATED badge.",
+    "search_bar": "Sleek input field with a '/' keyboard shortcut badge.",
+    "story_detail": "Editorial reading mode. H1 headline, short summary, list of outbound source links. Share buttons.",
+    "newsletter": "Inline block with simple email input and 'Subscribe' button. High contrast."
+  },
+  "motion": {
+    "interactions": "Subtle hover states (-translate-y-1) for story cards. Hover colors must explicitly be defined (e.g., hover:border-accent).",
+    "loading": "Use skeleton loaders with pulse animation for incoming data. No spinning circles.",
+    "transitions": "Use specific transitions like `transition-transform duration-200 ease-out`. Avoid `transition-all`."
+  },
+  "accessibility": {
+    "contrast": "Ensure text over gradients meets APCA standards.",
+    "focus": "All buttons and inputs need focus:ring-2 focus:ring-accent focus:outline-none."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1579548122080-c35fd6820ecb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHw0fHxtaW5pbWFsaXN0JTIwdGVjaCUyMGFic3RyYWN0JTIwZGFya3xlbnwwfHx8fDE3ODQxODAxOTl8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Dark blue/black minimal abstract. Apply as masked background for the TL;DR Hero Card.",
+        "category": "tldr_background"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1504711434969-e33886168f5c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzV8MHwxfHNlYXJjaHwyfHxuZXdzcGFwZXIlMjBlZGl0b3JpYWwlMjBqb3VybmFsaXNtfGVufDB8fHx8MTc4NDE4MDE5OXww&ixlib=rb-4.1.0&q=85",
+        "description": "Monochrome newspaper stack. Use for About page hero or fallback.",
+        "category": "about_hero"
+      }
+    ]
+  },
+  "GENERAL_UI_UX_DESIGN_GUIDELINES": [
+    "All interactive and key informational elements MUST include a `data-testid` attribute.",
+    "DO NOT use complete transparent background in header, overlays, any surface that has content under it. Example: Dropdown with transparent background.",
+    "Optical alignment over geometrical alignment.",
+    "Left-align paragraphs, inputs, or dense content for readability.",
+    "Use 2-3x more spacing than typical designs."
+  ],
+  "universal_guidelines_for_main_agent": {
+    "instructions": [
+      "You are writing .js/.jsx files (not .tsx) for the frontend.",
+      "Do NOT use HTML-based components for advanced user interactions. Use Shadcn components for Select, Dialog, etc.",
+      "Never center-align the main app container in CSS.",
+      "Add 'data-testid' to EVERY button, link, and major UI section.",
+      "Avoid AI slop: do not use rainbow gradients or emoji icons. Stick to lucide-react icons.",
+      "Dark mode by default, support toggling."
+    ]
+  }
+}
